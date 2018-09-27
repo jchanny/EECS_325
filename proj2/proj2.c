@@ -1,23 +1,130 @@
 //main class for project 2
 #include <stdio.h>
 #include <unistd.h>
+#include <string.h>
+#include <stdlib.h>
 
 const int DEFAULT_PORT_NUMBER = 80;
 const char* DEFAULT_FILENAME = "/";
 
-char* url;
 int port;
+char* hostname;
 char* url_filename;
 char* local_filename;
 
 int dOption = 0;
+int rOption = 0;
+
+//-r option, print out HTTP request
+void printHttpRequest(){
+	printf("REQ: GET %s HTTP/1.0\n", url_filename);
+	printf("REQ: Host: %s\n", hostname);
+	printf("REQ: User-Agent: CWRU EECS 325 Client 1.0\n");
+}
 
 //-d option
 void printCommandLineParams(){
-	printf("DET: hostname = %s \n", url);
+	printf("DET: hostname = %s \n", hostname);
 	printf("DET: port = %i \n", port);
 	printf("DET: web_filename = %s \n", url_filename);
 	printf("DET: output_filename = %s \n", local_filename);
+}
+
+//separates URL into hostname, port, path to file
+//return 0 if url parsed successfully, 1 otherwise
+int parseUrl(url){
+	const int protocolLen = 7;
+	char* slash = "/";
+	char* colon = ":";
+	
+	int urlLen = strlen(url) + 1;
+	if(urlLen < 8){
+		fprintf(stderr, "URL must begin with http://");
+		return 1;
+	}
+
+	//convert url to char array
+	char fullUrl [urlLen];
+	strncpy(fullUrl, url, sizeof(fullUrl) - 1);
+	fullUrl[sizeof(fullUrl) - 1] = '\0';
+
+	//check that http protocol is specified, case insensitive
+	char* expectedProtocol = "http://";
+	if(strncasecmp(fullUrl, expectedProtocol, protocolLen) != 0){
+		fprintf(stderr, "HTTP protocol must be used\n");
+		return 1;
+	}
+
+	//chop off http://
+	//http://hi.com:90/helloThere -> becomes: hi.com:90/helloThere
+	char *noProtocolUrl = fullUrl + protocolLen;
+	
+    //extract hostname
+    //check if colon exists
+    if(strstr(noProtocolUrl, colon)){
+        //everything after the hostname
+        char *endOfHostname = strstr(noProtocolUrl, colon);
+        
+        char tempHostnameHolder[strlen(noProtocolUrl) - strlen(endOfHostname) +1 ];
+        strncpy(tempHostnameHolder, noProtocolUrl, sizeof(tempHostnameHolder) - 1);
+        tempHostnameHolder[sizeof(tempHostnameHolder) - 1] = '\0';
+        hostname = (char *)malloc(strlen(tempHostnameHolder)+1);
+        strcpy(hostname, tempHostnameHolder);
+       
+        //if web filename exists
+        if(strstr(endOfHostname, slash)){
+            char endOfHostnameArray[strlen(endOfHostname)];
+            endOfHostnameArray[sizeof(endOfHostnameArray) - 1] = '\0';
+            char *webFilename = strstr(endOfHostname, slash);
+            url_filename = (char *)malloc(strlen(webFilename) + 1);
+            strcpy(url_filename,webFilename);
+            
+            //grab port number
+            char portStringWithColon[strlen(endOfHostname) - strlen(url_filename) + 1];
+            strncpy(portStringWithColon, endOfHostname, sizeof(portStringWithColon) - 1);
+            portStringWithColon[sizeof(portStringWithColon) - 1] = '\0';
+            //advance portString pointer by 1 to remove the colon
+            int colonOffset = 1;
+            char *portString = portStringWithColon + colonOffset;
+            port = atoi(portString);
+        }
+        else{
+            //web filename doesn't exist
+            char endOfHostnameArray[strlen(endOfHostname)];
+            endOfHostnameArray[sizeof(endOfHostnameArray) - 1] = '\0';
+            strcpy(endOfHostnameArray, endOfHostname);
+            char *portString = endOfHostnameArray + 1;
+            port = atoi(portString);
+            url_filename = (char *)malloc(strlen(slash) + 1);
+            strcpy(url_filename, slash);
+        }
+    }else{
+        port = 80;
+        //if web filename exists
+        if(strstr(noProtocolUrl, slash)){
+            //extract hostname from url to endOfHostname
+            char *endOfHostname = strstr(noProtocolUrl, slash);
+			char tempHostnameHolder[strlen(noProtocolUrl) - strlen(endOfHostname) +1 ];
+			strncpy(tempHostnameHolder, noProtocolUrl, sizeof(tempHostnameHolder) - 1);
+            tempHostnameHolder[sizeof(tempHostnameHolder) - 1] = '\0';
+            hostname = (char *)malloc(strlen(tempHostnameHolder)+1);
+            strcpy(hostname, tempHostnameHolder);
+            
+            //extract url_filename
+            url_filename = (char *)malloc(strlen(endOfHostname) + 1);
+            strcpy(url_filename,endOfHostname);
+        }else{
+            hostname = (char *)malloc(strlen(noProtocolUrl) + 1);
+            strcpy(hostname, noProtocolUrl);
+            url_filename = (char *)malloc(strlen(slash) + 1);
+            strcpy(url_filename, slash);
+            
+        }
+        
+    }
+
+	
+	return 0;
 }
 
 int parseargs(int argc, char *argv []){
@@ -26,10 +133,12 @@ int parseargs(int argc, char *argv []){
 	int urlPresent = 0;
 	int localFilenamePresent = 0;
 	
-	while ((opt = getopt(argc, argv, "u:do:")) != -1){
+	while ((opt = getopt(argc, argv, "u:do:rR")) != -1){
 		switch(opt){
 		case 'u':
-			url = optarg;
+			if(parseUrl(optarg) == 1){
+				return 1;
+			}
 			urlPresent = 1;
 			break;
 		case 'd' :
@@ -38,6 +147,9 @@ int parseargs(int argc, char *argv []){
 		case 'o' :
 			local_filename = optarg;
 			localFilenamePresent = 1;
+			break;
+		case 'r':
+			rOption = 1;
 			break;
 		case '?':
 			if(optopt == 'u')
@@ -64,13 +176,19 @@ int parseargs(int argc, char *argv []){
 }
 
 int main(int argc, char *argv []){
-	port = DEFAULT_PORT_NUMBER;
-	url_filename = DEFAULT_FILENAME;
-	
-	parseargs(argc, argv);
 
-	if(dOption){
-		printCommandLineParams();
-	}
+	/* port = DEFAULT_PORT_NUMBER; */
+	/* url_filename = DEFAULT_FILENAME; */
+	
+	/* if(parseargs(argc, argv))
+	   return 1; */
+
+	/* if(dOption){ */
+	/* 	printCommandLineParams(); */
+	/* } */
+	/* if(rOption){ */
+	/* 	printHttpRequest(); */
+	/* } */
+	//here do the actual fetch stuff
 	return 0;
 }

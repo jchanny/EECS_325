@@ -132,13 +132,17 @@ int parseargs(int argc, char *argv []){
 
 	int urlPresent = 0;
 	int localFilenamePresent = 0;
+	char* urlString;
 	
 	while ((opt = getopt(argc, argv, "u:do:rR")) != -1){
 		switch(opt){
 		case 'u':
-			if(parseUrl(optarg) == 1){
+			if(strlen(optarg) == 0){
+				fprintf(stderr,"missing URL");
 				return 1;
 			}
+			urlString = (char *)malloc(strlen(optarg) + 1);
+			strcpy(urlString, optarg);
 			urlPresent = 1;
 			break;
 		case 'd' :
@@ -171,24 +175,25 @@ int parseargs(int argc, char *argv []){
 		fprintf(stderr, "Missing write file parameter.\n");
 		return 1;
 	}
-	
-	return 0;
+
+	return parseUrl(urlString);
 }
 
 int main(int argc, char *argv []){
 
-	/* port = DEFAULT_PORT_NUMBER; */
-	/* url_filename = DEFAULT_FILENAME; */
+	port = DEFAULT_PORT_NUMBER;
+	url_filename = DEFAULT_FILENAME;
 	
-	/* if(parseargs(argc, argv))
-	   return 1; */
+	if(parseargs(argc, argv))
+	   return 1;
 
-	/* if(dOption){ */
-	/* 	printCommandLineParams(); */
-	/* } */
-	/* if(rOption){ */
-	/* 	printHttpRequest(); */
-	/* } */
+	if(dOption){
+		printCommandLineParams();
+	}
+	if(rOption){
+		printHttpRequest();
+	}
+	
 	//here do the actual fetch stuff
 	return 0;
 }

@@ -4,6 +4,8 @@
 #include <string.h>
 #include <stdlib.h>
 
+#define ERROR 1
+
 const int DEFAULT_PORT_NUMBER = 80;
 const char* DEFAULT_FILENAME = "/";
 
@@ -40,7 +42,7 @@ int parseUrl(url){
 	int urlLen = strlen(url) + 1;
 	if(urlLen < 8){
 		fprintf(stderr, "URL must begin with http://");
-		return 1;
+		return ERROR;
 	}
 
 	//convert url to char array
@@ -52,7 +54,7 @@ int parseUrl(url){
 	char* expectedProtocol = "http://";
 	if(strncasecmp(fullUrl, expectedProtocol, protocolLen) != 0){
 		fprintf(stderr, "HTTP protocol must be used\n");
-		return 1;
+		return ERROR;
 	}
 
 	//chop off http://
@@ -139,7 +141,7 @@ int parseargs(int argc, char *argv []){
 		case 'u':
 			if(strlen(optarg) == 0){
 				fprintf(stderr,"missing URL");
-				return 1;
+				return ERROR;
 			}
 			urlString = (char *)malloc(strlen(optarg) + 1);
 			strcpy(urlString, optarg);
@@ -162,18 +164,18 @@ int parseargs(int argc, char *argv []){
 				fprintf(stderr, "Output filename needs to be specified.\n");
 			else
 				fprintf(stderr, "Unsupported command flag used.\n");
-			return 1;
+			return ERROR;
 		}
 		
 	}
 
 	if(urlPresent == 0){
 		fprintf(stderr, "Missing URL parameter.\n");
-		return 1;
+		return ERROR;
 	}
 	if(localFilenamePresent == 0){
 		fprintf(stderr, "Missing write file parameter.\n");
-		return 1;
+		return ERROR;
 	}
 
 	return parseUrl(urlString);
@@ -185,7 +187,7 @@ int main(int argc, char *argv []){
 	url_filename = DEFAULT_FILENAME;
 	
 	if(parseargs(argc, argv))
-	   return 1;
+	   return ERROR;
 
 	if(dOption){
 		printCommandLineParams();

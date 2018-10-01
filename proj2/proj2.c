@@ -3,8 +3,14 @@
 #include <unistd.h>
 #include <string.h>
 #include <stdlib.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <netinet/in.h>
+#include <netdb.h>
 
 #define ERROR 1
+#define BUF_LEN 1024
+#define PROTOCOL "tcp"
 
 const int DEFAULT_PORT_NUMBER = 80;
 const char* DEFAULT_FILENAME = "/";
@@ -17,19 +23,9 @@ char* local_filename;
 int dOption = 0;
 int rOption = 0;
 
-//-r option, print out HTTP request
-void printHttpRequest(){
-	printf("REQ: GET %s HTTP/1.0\n", url_filename);
-	printf("REQ: Host: %s\n", hostname);
-	printf("REQ: User-Agent: CWRU EECS 325 Client 1.0\n");
-}
-
-//-d option
-void printCommandLineParams(){
-	printf("DET: hostname = %s \n", hostname);
-	printf("DET: port = %i \n", port);
-	printf("DET: web_filename = %s \n", url_filename);
-	printf("DET: output_filename = %s \n", local_filename);
+void error(char *msg){
+	perror(msg);
+	exit(ERROR);
 }
 
 //separates URL into hostname, port, path to file
@@ -181,6 +177,72 @@ int parseargs(int argc, char *argv []){
 	return parseUrl(urlString);
 }
 
+//-d option
+void printCommandLineParams(){
+	printf("DET: hostname = %s \n", hostname);
+	printf("DET: port = %i \n", port);
+	printf("DET: web_filename = %s \n", url_filename);
+	printf("DET: output_filename = %s \n", local_filename);
+}
+
+//-r option, print out HTTP request
+void printHttpRequest(){
+	printf("REQ: GET %s HTTP/1.0\n", url_filename);
+	printf("REQ: Host: %s\n", hostname);
+	printf("REQ: User-Agent: CWRU EECS 325 Client 1.0\n");
+}
+
+//method opens socket, initiates connection, processes request
+int makeGetRequest(){
+	struct sockaddr_in serv_addr;
+	struct protoent *protoinfo;
+	struct hostent *hinfo;
+	char buffer[BUF_LEN];
+   
+	int sock, ret, n;
+		
+	hinfo = gethostbyname(hostname);
+	if(hinfo == NULL){
+		error("Host %s not found.");
+	}
+
+	
+	memset((char *)&serv_addr, 0x0, sizeof(serv_addr));
+	serv_addr.sin_family = AF_INET;
+	serv_addr.sin_port = htons(port);
+	memcpy((char *)&serv_addr.sin_addr, hinfo->h_addr, hinfo->h_length);
+
+	if((protoinfo = getprotobyname(PROTOCOL)) == NULL){
+		 error("Cannot find protocol info");
+	}
+
+	sock = socket(PF_INET, SOCK_STREAM, protoinfo->p_proto);
+	if(sock < 0)
+		 error("Cannot create socket");
+
+	if(connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
+		 error("Socket connection error. Check your internet connection");
+
+	//write get request to buffer
+	snprintf(buffer, sizeof(buffer), "GET %s HTTP/1.0\r\nHost: %s\r\nUser-Agent: CWRU EECS 325 Client 1.0\r\n\r\n", url_filename, hostname);
+	n = write(sock, buffer, strlen(buffer));
+	if(n < 0)
+		error("Error writing to socket");
+	
+		
+	//read buffer
+	memset(buffer, 0x0, BUF_LEN);
+	ret = read(sock, buffer, BUF_LEN - 1);
+	
+	if(ret < 0)
+		error("Error reading buffer.");
+	
+	fprintf(stdout, "%s\n", buffer);
+	close(sock);
+
+	return 0;
+}
+
 int main(int argc, char *argv []){
 
 	port = DEFAULT_PORT_NUMBER;
@@ -189,6 +251,8 @@ int main(int argc, char *argv []){
 	if(parseargs(argc, argv))
 	   return ERROR;
 
+	makeGetRequest();
+	
 	if(dOption){
 		printCommandLineParams();
 	}

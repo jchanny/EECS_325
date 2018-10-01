@@ -11,6 +11,7 @@
 #define ERROR 1
 #define BUF_LEN 1024
 #define PROTOCOL "tcp"
+#define RESPONSE_CODE_LENGTH 3
 
 const int DEFAULT_PORT_NUMBER = 80;
 const char* DEFAULT_FILENAME = "/";
@@ -22,9 +23,11 @@ char* local_filename;
 
 int dOption = 0;
 int rOption = 0;
+int bigRoption = 0;
 
 void error(char *msg){
-	perror(msg);
+	fprintf(stderr, msg);
+	fprintf(stderr, "\n"); 
 	exit(ERROR);
 }
 
@@ -153,6 +156,9 @@ int parseargs(int argc, char *argv []){
 		case 'r':
 			rOption = 1;
 			break;
+		case 'R':
+			bigRoption = 1;
+			break;
 		case '?':
 			if(optopt == 'u')
 				fprintf(stderr, "URL needs to be specified.\n");
@@ -192,6 +198,54 @@ void printHttpRequest(){
 	printf("REQ: User-Agent: CWRU EECS 325 Client 1.0\n");
 }
 
+void printResponseHeader(char responseHeader[]){
+	char *tok;
+	char *delim = "\r\n";
+	tok = strtok(responseHeader, delim);
+
+	while(tok != NULL){
+		printf("RSP: %s\n",tok);
+		tok = strtok(NULL, delim);
+	}
+}
+
+int writeToFile(char content[]){
+	
+}
+
+//takes in raw response buffer from server, separates response header from content
+int parseResponse(char buffer[]){
+	//parse response code, content length
+	int responseCode, contentLength;
+	char* httpProtocolAndVersion = "HTTP/1.0 ";
+	char responseCodeStr[4];
+	strncpy(responseCodeStr, buffer + strlen(httpProtocolAndVersion), 3);
+	responseCodeStr[3] = '\0';
+	responseCode = atoi(responseCodeStr);
+
+	//extract and separate out response header
+	char* breakoffLine = "\r\n\r\n";
+	char* responseContent = strstr(buffer, breakoffLine);
+	char responseHeader[strlen(buffer) - strlen(responseContent) + 1];
+	strncpy(responseHeader, buffer, strlen(buffer) - strlen(responseContent));
+	responseHeader[sizeof(responseHeader) - 1] = '\0';
+	
+	
+	if(bigRoption){
+		printResponseHeader(responseHeader);
+	}
+	//write content to file if response code = 200
+	if(responseCode == 200){
+
+	}else{
+		fprintf(stderr, "Response code was %i. There will be nothing written to output file.\n", responseCode);
+		return 1;
+	}
+
+	//if -R print out response header
+	return 0;
+}
+
 //method opens socket, initiates connection, processes request
 int makeGetRequest(){
 	struct sockaddr_in serv_addr;
@@ -203,7 +257,8 @@ int makeGetRequest(){
 		
 	hinfo = gethostbyname(hostname);
 	if(hinfo == NULL){
-		error("Host %s not found.");
+		error("Host not found.");
+		return 1;
 	}
 
 	
@@ -214,32 +269,41 @@ int makeGetRequest(){
 
 	if((protoinfo = getprotobyname(PROTOCOL)) == NULL){
 		 error("Cannot find protocol info");
+		 return 1;
 	}
 
 	sock = socket(PF_INET, SOCK_STREAM, protoinfo->p_proto);
-	if(sock < 0)
+	if(sock < 0){
 		 error("Cannot create socket");
+		 return 1;
+	}
 
-	if(connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
+	if(connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0){
 		 error("Socket connection error. Check your internet connection");
+		 return 1;
+	}
 
 	//write get request to buffer
 	snprintf(buffer, sizeof(buffer), "GET %s HTTP/1.0\r\nHost: %s\r\nUser-Agent: CWRU EECS 325 Client 1.0\r\n\r\n", url_filename, hostname);
 	n = write(sock, buffer, strlen(buffer));
-	if(n < 0)
+	if(n < 0){
 		error("Error writing to socket");
-	
+		return 1;
+	}
 		
 	//read buffer
 	memset(buffer, 0x0, BUF_LEN);
 	ret = read(sock, buffer, BUF_LEN - 1);
 	
-	if(ret < 0)
+	if(ret < 0){
 		error("Error reading buffer.");
-	
-	fprintf(stdout, "%s\n", buffer);
-	close(sock);
+		return 1;
+	}
 
+
+	parseResponse(buffer);
+	close(sock);
+	
 	return 0;
 }
 
@@ -251,7 +315,8 @@ int main(int argc, char *argv []){
 	if(parseargs(argc, argv))
 	   return ERROR;
 
-	makeGetRequest();
+	if(makeGetRequest())
+		return ERROR;
 	
 	if(dOption){
 		printCommandLineParams();

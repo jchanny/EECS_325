@@ -20,7 +20,7 @@ int port;
 char* hostname;
 char* url_filename;
 char* local_filename;
-
+int responseCode;
 int dOption = 0;
 int rOption = 0;
 int bigRoption = 0;
@@ -209,14 +209,10 @@ void printResponseHeader(char responseHeader[]){
 	}
 }
 
-int writeToFile(char content[]){
-	
-}
-
 //takes in raw response buffer from server, separates response header from content
 int parseResponse(char buffer[]){
 	//parse response code, content length
-	int responseCode, contentLength;
+	int contentLength;
 	char* httpProtocolAndVersion = "HTTP/1.0 ";
 	char responseCodeStr[4];
 	strncpy(responseCodeStr, buffer + strlen(httpProtocolAndVersion), 3);
@@ -226,6 +222,9 @@ int parseResponse(char buffer[]){
 	//extract and separate out response header
 	char* breakoffLine = "\r\n\r\n";
 	char* responseContent = strstr(buffer, breakoffLine);
+	//delete 2 empty spaces from responseContent
+	char* content = responseContent + 4;
+   
 	char responseHeader[strlen(buffer) - strlen(responseContent) + 1];
 	strncpy(responseHeader, buffer, strlen(buffer) - strlen(responseContent));
 	responseHeader[sizeof(responseHeader) - 1] = '\0';
@@ -236,13 +235,19 @@ int parseResponse(char buffer[]){
 	}
 	//write content to file if response code = 200
 	if(responseCode == 200){
+		FILE *fp = fopen(local_filename, "w");
+		if(fp < 0){
+			fprintf(stderr, "Error opening file.\n");
+			return 1;
+		}
 
+		fprintf(fp, content);
+		fclose(fp);
 	}else{
 		fprintf(stderr, "Response code was %i. There will be nothing written to output file.\n", responseCode);
 		return 1;
 	}
 
-	//if -R print out response header
 	return 0;
 }
 
@@ -268,19 +273,19 @@ int makeGetRequest(){
 	memcpy((char *)&serv_addr.sin_addr, hinfo->h_addr, hinfo->h_length);
 
 	if((protoinfo = getprotobyname(PROTOCOL)) == NULL){
-		 error("Cannot find protocol info");
-		 return 1;
+		error("Cannot find protocol info");
+		return 1;
 	}
 
 	sock = socket(PF_INET, SOCK_STREAM, protoinfo->p_proto);
 	if(sock < 0){
-		 error("Cannot create socket");
-		 return 1;
+		error("Cannot create socket");
+		return 1;
 	}
 
 	if(connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0){
-		 error("Socket connection error. Check your internet connection");
-		 return 1;
+		error("Socket connection error. Check your internet connection");
+		return 1;
 	}
 
 	//write get request to buffer
@@ -300,8 +305,22 @@ int makeGetRequest(){
 		return 1;
 	}
 
-
 	parseResponse(buffer);
+	if(responseCode == 200){
+		FILE *fp = fopen(local_filename, "a");
+		if(fp < 0){
+			fprintf(stderr, "Error writing to file.\n");
+			return 1;
+		}
+		
+		while(ret > 0){
+			memset(buffer, 0x0, BUF_LEN);
+			ret = read(sock, buffer, BUF_LEN -1);
+			fprintf(fp, "%s", buffer);
+		}
+		fclose(fp);
+	}
+	
 	close(sock);
 	
 	return 0;
@@ -313,18 +332,18 @@ int main(int argc, char *argv []){
 	url_filename = DEFAULT_FILENAME;
 	
 	if(parseargs(argc, argv))
-	   return ERROR;
-
-	if(makeGetRequest())
 		return ERROR;
-	
+
 	if(dOption){
 		printCommandLineParams();
 	}
 	if(rOption){
 		printHttpRequest();
 	}
-	
+
+	if(makeGetRequest())
+		return ERROR;
+		
 	//here do the actual fetch stuff
 	return 0;
 }

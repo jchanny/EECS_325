@@ -1,3 +1,6 @@
+//Jeremy Chan jsc126
+//EECS 325 proj #2
+//Created Sep 20, 2018
 //main class for project 2
 #include <stdio.h>
 #include <unistd.h>
@@ -9,7 +12,7 @@
 #include <netdb.h>
 
 #define ERROR 1
-#define BUF_LEN 1024
+#define BUF_LEN 4096
 #define PROTOCOL "tcp"
 #define RESPONSE_CODE_LENGTH 3
 
@@ -23,6 +26,7 @@ char* local_filename;
 int responseCode;
 int dOption = 0;
 int rOption = 0;
+int fOption = 0;
 int bigRoption = 0;
 
 void error(char *msg){
@@ -135,7 +139,7 @@ int parseargs(int argc, char *argv []){
 	int localFilenamePresent = 0;
 	char* urlString;
 	
-	while ((opt = getopt(argc, argv, "u:do:rR")) != -1){
+	while ((opt = getopt(argc, argv, "u:do:rRf")) != -1){
 		switch(opt){
 		case 'u':
 			if(strlen(optarg) == 0){
@@ -158,6 +162,9 @@ int parseargs(int argc, char *argv []){
 			break;
 		case 'R':
 			bigRoption = 1;
+			break;
+		case 'f':
+			fOption = 1;
 			break;
 		case '?':
 			if(optopt == 'u')
@@ -229,10 +236,10 @@ int parseResponse(char buffer[]){
 	strncpy(responseHeader, buffer, strlen(buffer) - strlen(responseContent));
 	responseHeader[sizeof(responseHeader) - 1] = '\0';
 	
-	
 	if(bigRoption){
 		printResponseHeader(responseHeader);
-	}
+	}	
+	
 	//write content to file if response code = 200
 	if(responseCode == 200){
 		FILE *fp = fopen(local_filename, "w");
@@ -240,12 +247,12 @@ int parseResponse(char buffer[]){
 			fprintf(stderr, "Error opening file.\n");
 			return 1;
 		}
-
+		//	fwrite(content, sizeof(char), BUF_LEN, fp);
 		fprintf(fp, content);
 		fclose(fp);
 	}else{
 		fprintf(stderr, "Response code was %i. There will be nothing written to output file.\n", responseCode);
-		return 1;
+		return 1;		
 	}
 
 	return 0;
@@ -315,9 +322,11 @@ int makeGetRequest(){
 		
 		while(ret > 0){
 			memset(buffer, 0x0, BUF_LEN);
-			ret = read(sock, buffer, BUF_LEN -1);
-			fprintf(fp, "%s", buffer);
+			ret = read(sock, buffer, BUF_LEN - 1);
+			//	fwrite(buffer, sizeof(char), BUF_LEN , fp);
+			fprintf(fp, buffer);
 		}
+		
 		fclose(fp);
 	}
 	

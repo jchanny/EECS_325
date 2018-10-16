@@ -11,20 +11,21 @@
 #include <netinet/in.h>
 
 #define SHUTTING_DOWN "HTTP/1.1 200 Server Shutting Down\r\n\r\n"
-#define OK 200
 #define MALFORMED_REQUEST "HTTP/1.1 400 Malformed Request\r\n\r\n"
 #define OPERATION_FORBIDDEN "HTTP/1.1 403 Operation Forbidden\r\n\r\n"
 #define FILE_NOT_FOUND 404
 #define UNSUPPORTED_METHOD "HTTP/1.1 405 Unsupported Method\r\n\r\n"
-#define INVALID_FILENAME 406
-#define PROTOCOL_NOT_IMPLEMENTED 501
+#define INVALID_FILENAME "HTTP/1.1 406 Invalid Filename\r\n\r\n"
+#define PROTOCOL_NOT_IMPLEMENTED "HTTP/1.1 501 Protocol Not Implemented\r\n\r\n"
 #define NOT_PRESENT 0
 #define PRESENT 1
 #define SUCCESS 0
 #define ERROR 1
 #define PROTOCOL "tcp"
 #define QLEN 5
-#define BUF_LEN 4096
+#define BUF_LEN 8096
+#define DEFAULT_FILENAME "/default.html"
+#define READ_MODE "r"
 
 int port;
 char *directory;
@@ -94,7 +95,27 @@ int sendResponse(int socket, char *message){
 
 //attempts to open file, and send file to client
 int getFile(int socket, char *filename){
-	sendResponse(socket, filename);
+		//if filename doesn't begin with /
+	if(filename[0] != '/'){
+		sendResponse(socket, INVALID_FILENAME);
+		return 1;
+	}
+	FILE *fp;
+	//check if default filename should be used
+	if(strcmp(filename, "/") == 0){
+		//look for default.html
+		fp = fopen(DEFAULT_FILENAME, READ_MODE);
+		if(fp < 0){
+			error("Error opening file");
+		}
+	}else{
+		fp = fopen(filename, READ_MODE);
+		if(fp < 0){
+			error("Error opening file");
+		}
+	}
+
+	//now write fp to socket
 	return 0;
 }
 
@@ -110,36 +131,37 @@ int quitOperation(int socket, char *token){
 	return 0;
 }
 
-
-
 //do what client requests
 int completeRequest(int socket, char *firstLine){
-	if(strstr(firstLine, "GET")){
-		char *filenamePtr = strstr(firstLine, "GET /");
-		char *endFilenamePtr = strstr(firstLine, " HTTP");
-		if(filenamePtr == NULL || endFilenamePtr == NULL ){
-			sendResponse(socket, MALFORMED_REQUEST);
+	if(strstr(firstLine, "GET") != NULL){
+		char *filenamePtr = strstr(firstLine, "GET ");
+		char *endFilenamePtr = strstr(firstLine, " HTTP/");
+		
+		if(endFilenamePtr == NULL){
+			sendResponse(socket, PROTOCOL_NOT_IMPLEMENTED);
 			return 1;
 		}
-		
-		char *tmpFilename = filenamePtr + strlen("GET /");
+				
+		char *tmpFilename = filenamePtr + strlen("GET ");
 
 		//the requested filename
-		char filename[strlen(tmpFilename) - strlen(endFilenamePtr) + 1];
+		char filename[strlen(tmpFilename) - strlen(endFilenamePtr)];
 		filename[sizeof(filename) - 1] = '\0';
 		strncpy(filename, tmpFilename, sizeof(filename));
 
 		getFile(socket, filename);
 		
-	}else if(strstr(firstLine, "QUIT")){
+	}else if(strstr(firstLine, "QUIT") != NULL){
 		char *quitPtr = strstr(firstLine, "QUIT ");
-		char *endTokenPtr = strstr(firstLine, " HTTP");
-		if(quitPtr == NULL || endTokenPtr == NULL){
-			sendResponse(socket, MALFORMED_REQUEST);
+		char *endTokenPtr = strstr(firstLine, " HTTP/");
+		
+		if(endTokenPtr == NULL){
+			sendResponse(socket, PROTOCOL_NOT_IMPLEMENTED);
 			return 1;
 		}
+		
 		char *tmpToken = quitPtr + strlen("QUIT ");
-		char token[strlen(tmpToken) - strlen(endTokenPtr) + 1];
+		char token[strlen(tmpToken) - strlen(endTokenPtr)];
 		token[sizeof(token) - 1] = '\0';
 		strncpy(token, tmpToken, sizeof(token));
 
@@ -148,6 +170,7 @@ int completeRequest(int socket, char *firstLine){
 	}
 	else{
 		sendResponse(socket, UNSUPPORTED_METHOD);
+		return 1;
 	}
 	
 	return 0;
@@ -173,21 +196,15 @@ int handleClientConnection(int socket){
 	strncpy(bufferCpy, buffer, BUF_LEN);
 	char *request = strtok(bufferCpy, "\r\n");
 
-	//check to make sure that request ends with \r\n\r\n
-	//also have to check to see if request is fully consumed
-	while(bytesRead > 0){
-		memset(buffer, 0x0, BUF_LEN);
-		bytesRead = read(socket, buffer, BUF_LEN -1);
+	if(strstr(buffer, "\r\n\r\n") == NULL){
+		return sendResponse(socket, MALFORMED_REQUEST);
 	}
-	if(strstr(bufferCpy, "\r\n\r\n") == NULL && strstr(buffer, "\r\n\r\n") == NULL){
-		sendResponse(socket, MALFORMED_REQUEST);
-	}
-
+	
 	if(request){
-		completeRequest(socket, request);
+		return completeRequest(socket, request);
 	}
 	else{
-		sendResponse(socket, MALFORMED_REQUEST);
+		return sendResponse(socket, MALFORMED_REQUEST);
 	}
 	
 	return 0;

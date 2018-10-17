@@ -13,7 +13,7 @@
 #define SHUTTING_DOWN "HTTP/1.1 200 Server Shutting Down\r\n\r\n"
 #define MALFORMED_REQUEST "HTTP/1.1 400 Malformed Request\r\n\r\n"
 #define OPERATION_FORBIDDEN "HTTP/1.1 403 Operation Forbidden\r\n\r\n"
-#define FILE_NOT_FOUND 404
+#define FILE_NOT_FOUND "HTTP/1.1 404 File Not Found\r\n\r\n"
 #define UNSUPPORTED_METHOD "HTTP/1.1 405 Unsupported Method\r\n\r\n"
 #define INVALID_FILENAME "HTTP/1.1 406 Invalid Filename\r\n\r\n"
 #define PROTOCOL_NOT_IMPLEMENTED "HTTP/1.1 501 Protocol Not Implemented\r\n\r\n"
@@ -101,19 +101,26 @@ int getFile(int socket, char *filename){
 		return 1;
 	}
 	FILE *fp;
+
+	char *fullPath;
 	//check if default filename should be used
 	if(strcmp(filename, "/") == 0){
 		//look for default.html
-		fp = fopen(DEFAULT_FILENAME, READ_MODE);
-		if(fp < 0){
-			error("Error opening file");
-		}
+		fullPath = malloc(strlen(directory) + strlen(DEFAULT_FILENAME) + 1);
+		strcpy(fullPath, directory);
+		strcat(fullPath, DEFAULT_FILENAME);
 	}else{
-		fp = fopen(filename, READ_MODE);
-		if(fp < 0){
-			error("Error opening file");
-		}
+		fullPath  = malloc(strlen(directory) + strlen(filename) + 1);
+		strcpy(fullPath, directory);
+		strcat(fullPath, filename);
 	}
+	
+	fp = fopen(fullPath, READ_MODE);
+	
+	if(fp < 0){
+		error("Error opening file");
+	}
+
 
 	//now write fp to socket
 	return 0;
@@ -133,15 +140,16 @@ int quitOperation(int socket, char *token){
 
 //do what client requests
 int completeRequest(int socket, char *firstLine){
+	//this forces protocol not implemented to have higher priority
+	if(strstr(firstLine, " HTTP/") == NULL){
+		sendResponse(socket, PROTOCOL_NOT_IMPLEMENTED);
+		return 1;
+	}
+	
 	if(strstr(firstLine, "GET") != NULL){
 		char *filenamePtr = strstr(firstLine, "GET ");
 		char *endFilenamePtr = strstr(firstLine, " HTTP/");
-		
-		if(endFilenamePtr == NULL){
-			sendResponse(socket, PROTOCOL_NOT_IMPLEMENTED);
-			return 1;
-		}
-				
+						
 		char *tmpFilename = filenamePtr + strlen("GET ");
 
 		//the requested filename
@@ -154,11 +162,6 @@ int completeRequest(int socket, char *firstLine){
 	}else if(strstr(firstLine, "QUIT") != NULL){
 		char *quitPtr = strstr(firstLine, "QUIT ");
 		char *endTokenPtr = strstr(firstLine, " HTTP/");
-		
-		if(endTokenPtr == NULL){
-			sendResponse(socket, PROTOCOL_NOT_IMPLEMENTED);
-			return 1;
-		}
 		
 		char *tmpToken = quitPtr + strlen("QUIT ");
 		char token[strlen(tmpToken) - strlen(endTokenPtr)];
@@ -190,7 +193,7 @@ int handleClientConnection(int socket){
 		//request is empty, throw error
 		return 1;
 	}
-
+	
 	//extract request line, copy buffer fist
 	char bufferCpy[BUF_LEN];
 	strncpy(bufferCpy, buffer, BUF_LEN);

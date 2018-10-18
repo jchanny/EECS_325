@@ -17,6 +17,7 @@
 #define UNSUPPORTED_METHOD "HTTP/1.1 405 Unsupported Method\r\n\r\n"
 #define INVALID_FILENAME "HTTP/1.1 406 Invalid Filename\r\n\r\n"
 #define PROTOCOL_NOT_IMPLEMENTED "HTTP/1.1 501 Protocol Not Implemented\r\n\r\n"
+#define HTTP_OK "HTTP/1.1 200 OK\r\n\r\n"
 #define NOT_PRESENT 0
 #define PRESENT 1
 #define SUCCESS 0
@@ -86,10 +87,12 @@ int sendResponse(int socket, char *message){
 	char buffer[BUF_LEN];
 	snprintf(buffer, sizeof(buffer), "%s", message);
 	bytesWritten = write(socket, buffer, strlen(buffer));
+	
 	if(bytesWritten < 0){
 		error("Error writing to socket.");
 		return 1;
 	}
+
 	return 0;
 }
 
@@ -117,8 +120,26 @@ int getFile(int socket, char *filename){
 	
 	fp = fopen(fullPath, READ_MODE);
 	
-	if(fp < 0){
-		error("Error opening file");
+	if(fp == NULL){
+		sendResponse(socket, FILE_NOT_FOUND);
+		return 1;
+	}else{
+		sendResponse(socket, HTTP_OK);
+		//now actually read the file
+		char readBuffer[BUF_LEN];
+		memset(readBuffer, 0x0, BUF_LEN);
+		
+		int bytesRead;
+		
+		while(!feof(fp)){
+			bytesRead = fread(readBuffer, sizeof(char), BUF_LEN, fp);
+			write(socket, readBuffer, bytesRead);
+			memset(readBuffer, 0x0, BUF_LEN);
+		}
+		
+		if(fclose(fp) != 0){
+			error("Could not close file.");
+		}
 	}
 
 

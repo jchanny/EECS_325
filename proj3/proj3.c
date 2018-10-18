@@ -98,21 +98,22 @@ int sendResponse(int socket, char *message){
 
 //attempts to open file, and send file to client
 int getFile(int socket, char *filename){
-		//if filename doesn't begin with /
+	//if filename doesn't begin with /
 	if(filename[0] != '/'){
 		sendResponse(socket, INVALID_FILENAME);
 		return 1;
 	}
 	FILE *fp;
-
+	
 	char *fullPath;
 	//check if default filename should be used
 	if(strcmp(filename, "/") == 0){
 		//look for default.html
-		fullPath = malloc(strlen(directory) + strlen(DEFAULT_FILENAME) + 1);
+		fullPath = malloc(strlen(directory) + strlen("/default.html") + 1);
 		strcpy(fullPath, directory);
 		strcat(fullPath, DEFAULT_FILENAME);
 	}else{
+	
 		fullPath  = malloc(strlen(directory) + strlen(filename) + 1);
 		strcpy(fullPath, directory);
 		strcat(fullPath, filename);
@@ -133,6 +134,11 @@ int getFile(int socket, char *filename){
 		
 		while(!feof(fp)){
 			bytesRead = fread(readBuffer, sizeof(char), BUF_LEN, fp);
+			
+			if(bytesRead < 0){
+				error("Error reading file.");
+			}
+			
 			write(socket, readBuffer, bytesRead);
 			memset(readBuffer, 0x0, BUF_LEN);
 		}
@@ -174,8 +180,10 @@ int completeRequest(int socket, char *firstLine){
 		char *tmpFilename = filenamePtr + strlen("GET ");
 
 		//the requested filename
-		char filename[strlen(tmpFilename) - strlen(endFilenamePtr)];
-		filename[sizeof(filename) - 1] = '\0';
+		char filename[strlen(tmpFilename) - strlen(endFilenamePtr) ];
+		
+	
+		filename[sizeof(filename)] = '\0';
 		strncpy(filename, tmpFilename, sizeof(filename));
 
 		getFile(socket, filename);
@@ -212,6 +220,7 @@ int handleClientConnection(int socket){
 
 	if(bytesRead < 0){
 		//request is empty, throw error
+		error("No request present.");
 		return 1;
 	}
 	

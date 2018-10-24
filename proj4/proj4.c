@@ -7,6 +7,7 @@
 #DEFINE NOT_PRESENT 0
 #DEFINE PRESENT 1
 #DEFINE ERROR 1
+#DEFINE SUCCESS 1
 
 char mode;
 char *traceFilename;
@@ -14,6 +15,22 @@ char *traceFilename;
 int error(char *arg){
 	fprintf(stderr, "%s", arg);
 	exit(ERROR);
+}
+
+int summaryMode(){
+	return SUCCESS;
+}
+
+int lengthMode(){
+	return SUCCESS;
+}
+
+int packetPrintingMode(){
+	return SUCCESS;
+}
+
+int trafficMatrixMode(){
+	return SUCCESS;
 }
 
 int parseargs(int argc, char *argv[]){
@@ -56,10 +73,23 @@ int parseargs(int argc, char *argv[]){
 	if(numModeArgs == 0){
 		error("Mode must be specified.\n");
 	}
+
 }
 
 int main(int argc, char *argv []){
 	parseargs(argc, argv);
 	
+	if(mode == 's'){
+		summaryMode();
+	}
+	if(mode == 'l'){
+		lengthMode();
+	}
+	if(mode == 'p'){
+		packetPrintingMode();
+	}
+	if(mode == 'm'){
+		trafficMatrixMode();
+	}
 	return 0;
 }

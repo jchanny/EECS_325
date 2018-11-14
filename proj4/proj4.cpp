@@ -16,6 +16,8 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
+#include <iostream>
+#include <map>
 
 #define NOT_PRESENT 0
 #define PRESENT 1
@@ -31,6 +33,8 @@
 #define MAX_IP_HDR_LEN 6
 #define MIN_TCP_HEADER_SIZE 20
 #define UDP_HEADER_SIZE 8
+
+using namespace std;
 
 struct pkt_info{
 	//captured length of packet
@@ -108,10 +112,19 @@ unsigned short next_packet(int fd, struct pkt_info *pinfo){
 		//store correct transport packet in pinfo
 		if(pinfo->iph->protocol == TCP_PROTOCOL_ID){
 			pinfo->tcph = (struct tcphdr *)(pinfo->pkt + sizeof(struct iphdr) + sizeof(struct ether_header));
+			pinfo->udph = NULL;
 		}
 		else if(pinfo->iph->protocol == UDP_PROTOCOL_ID){
 			pinfo->udph = (struct udphdr *)(pinfo->pkt + sizeof(struct iphdr) + sizeof(struct ether_header));
+			pinfo->tcph = NULL;
 		}
+		else{
+			pinfo->tcph = NULL;
+			pinfo->udph = NULL;
+		}
+	}
+	else{
+		pinfo->iph = NULL;
 	}
 
 	return (1);
@@ -227,23 +240,24 @@ int lengthMode(char *traceFile){
 }
 
 //helper method that transforms int32 to ip address string
-char *intToIpAddress(u_int32_t ipAddr){
+int intToIpAddress(u_int32_t ipAddr, char buffer[]){
 	struct in_addr ip_addr;
 	ip_addr.s_addr = ipAddr;
 	char *ip_addr_str = inet_ntoa(ip_addr);
-	//now reverse string
-	return ip_addr_str;
+	strcpy(buffer, ip_addr_str);
+	return 0;
 }
 
 int processTcpPacket(struct pkt_info *pinfo){
 	double ts = pinfo->now;
-
-	char *src_ip = intToIpAddress(pinfo->iph->saddr);
-	char *dst_ip = intToIpAddress(pinfo->iph->daddr);
+	char src_ip[45];
+	char dst_ip[45];
 	
+	intToIpAddress(pinfo->iph->saddr, src_ip);
+	intToIpAddress(pinfo->iph->daddr, dst_ip);
+
 	int src_port = ntohs(pinfo->tcph->th_sport);
 	int dest_port = ntohs(pinfo->tcph->th_dport);
-	
 }
 
 int packetPrintingMode(char *traceFile){
@@ -254,7 +268,7 @@ int packetPrintingMode(char *traceFile){
 		errexit("Error opening file.");
 
 	while(next_packet(fd, &pinfo)){
-		if(pinfo.iph->protocol == TCP_PROTOCOL_ID){
+		if(pinfo.iph != NULL && pinfo.iph->protocol == TCP_PROTOCOL_ID){
 			processTcpPacket(&pinfo);
 		}
 	}
@@ -262,7 +276,37 @@ int packetPrintingMode(char *traceFile){
 	exit(SUCCESS);
 }
 
-int trafficMatrixMode(){
+int trafficMatrixMode(char *traceFile){
+	map <string, int> traffic;
+	struct pkt_info pinfo;
+
+	int fd = open(traceFile, O_RDONLY);
+	
+	while(next_packet(fd, &pinfo)){
+		if(pinfo.iph != NULL && pinfo.iph->protocol == TCP_PROTOCOL_ID){
+			char src_ip[45];
+			char dest_ip[45];
+			intToIpAddress(pinfo.iph->saddr, src_ip);
+			intToIpAddress(pinfo.iph->daddr, dest_ip);;
+			//format: [src_ip]-[dest_ip]
+			string route(src_ip);
+			route.append("-");
+			route.append(dest_ip);
+
+			//look at payload_len in -l for what this val should be
+			long traffic_volume;
+			//route exists already
+			if(traffic.count(route)){
+				traffic[route]+= traffic_volume;
+			}
+			else{
+				traffic.insert(pair <string,int> (route, traffic_volume));
+			}
+		}
+	}
+
+	cout << traffic["10.1.124.10-192.168.2.16"];
+	
 	exit(SUCCESS);
 }
 
@@ -326,7 +370,7 @@ int main(int argc, char *argv []){
 		packetPrintingMode(traceFilename);
 	}
 	if(mode == 'm'){
-		trafficMatrixMode();
+		trafficMatrixMode(traceFilename);
 	}
 	return 0;
 }

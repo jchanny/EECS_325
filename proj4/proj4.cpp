@@ -18,6 +18,7 @@
 #include <sys/socket.h>
 #include <iostream>
 #include <map>
+#include <vector>
 
 #define NOT_PRESENT 0
 #define PRESENT 1
@@ -33,6 +34,7 @@
 #define MAX_IP_HDR_LEN 6
 #define MIN_TCP_HEADER_SIZE 20
 #define UDP_HEADER_SIZE 8
+#define FOUR_BIT_OFFSET 4
 
 using namespace std;
 
@@ -202,14 +204,19 @@ int readIpPacket(struct pkt_info *pinfo){
 			printf(" ? ?");
 		}
 		else{
-			int trans_hl = ip_len - iphl;
-			if((transport == 'T' && trans_hl < MIN_TCP_HEADER_SIZE) || (transport == 'U' && trans_hl < UDP_HEADER_SIZE))
-				printf(" -");
-			else
+			int trans_hl = 0;
+			if(transport == 'T')
+				trans_hl = pinfo->tcph->th_off * FOUR_BIT_OFFSET;
+			if(transport == 'U')
+				trans_hl = UDP_HEADER_SIZE;
+			if((transport == 'T' && ip_len - iphl < MIN_TCP_HEADER_SIZE) || (transport == 'U' && ip_len - iphl < UDP_HEADER_SIZE))
+				printf(" - -");
+			else{
 				printf(" %i", trans_hl);
-
-			//if transport is ?, then payload len ?
-			//if TCP or UDP header not presnet print 0
+				int payload_len = ip_len - iphl - trans_hl;
+				printf(" %i", payload_len);
+			}
+			
 		}
 	}//IP hdr not present fully
 	else{
@@ -226,6 +233,7 @@ int lengthMode(char *traceFile){
 	
 	int fd = open(traceFile, O_RDONLY);
 	if(fd < 0){
+		printf("%s\n",strerror(errno));
 		errexit("Error opening file.");
 	}
 
@@ -248,6 +256,7 @@ int intToIpAddress(u_int32_t ipAddr, char buffer[]){
 	return 0;
 }
 
+//prints out each valid TCP Packet
 int processTcpPacket(struct pkt_info *pinfo){
 	double ts = pinfo->now;
 	char src_ip[45];
@@ -258,8 +267,24 @@ int processTcpPacket(struct pkt_info *pinfo){
 
 	int src_port = ntohs(pinfo->tcph->th_sport);
 	int dest_port = ntohs(pinfo->tcph->th_dport);
+	int ip_ttl = pinfo->iph->ttl;
+	int window = ntohs(pinfo->tcph->window);
+	long seqno = ntohl(pinfo->tcph->seq);
+
+	printf("%f %s %i %s %i %i %i %lu", ts, src_ip, src_port, dst_ip, dest_port, ip_ttl, window, seqno);
+
+	//if ack flag set, print out ackno
+	if(pinfo->tcph->th_flags & TH_ACK){
+		long ackno = ntohl(pinfo->tcph->th_ack);
+		printf(" %lu", ackno);
+	}
+	else
+		printf(" -");
+	
+	printf("\n");
 }
 
+//handles the -p mode
 int packetPrintingMode(char *traceFile){
 	struct pkt_info pinfo;
 	
@@ -278,10 +303,16 @@ int packetPrintingMode(char *traceFile){
 
 int trafficMatrixMode(char *traceFile){
 	map <string, int> traffic;
+	//stores all routes encountered, for iterating through traffic
+	vector <string> routeIndex;
 	struct pkt_info pinfo;
 
 	int fd = open(traceFile, O_RDONLY);
+	if(fd < 0){
+		
+	}
 	
+	//generate map structure
 	while(next_packet(fd, &pinfo)){
 		if(pinfo.iph != NULL && pinfo.iph->protocol == TCP_PROTOCOL_ID){
 			char src_ip[45];
@@ -293,19 +324,35 @@ int trafficMatrixMode(char *traceFile){
 			route.append("-");
 			route.append(dest_ip);
 
-			//look at payload_len in -l for what this val should be
-			long traffic_volume;
+			int ip_len = ntohs(pinfo.iph->tot_len);
+			int iphl = pinfo.iph->ihl;
+			if(iphl == MIN_IP_HDR_LEN)
+				iphl = 20;
+			if(iphl == MAX_IP_HDR_LEN)
+				iphl = 24;
+			
+			int trans_hl = pinfo.tcph->th_off * FOUR_BIT_OFFSET;
+			int traffic_volume = ip_len - iphl - trans_hl;
 			//route exists already
 			if(traffic.count(route)){
 				traffic[route]+= traffic_volume;
 			}
 			else{
 				traffic.insert(pair <string,int> (route, traffic_volume));
+				routeIndex.push_back(route);
 			}
 		}
 	}
 
-	cout << traffic["10.1.124.10-192.168.2.16"];
+	//now print out traffic info
+	for(int loop = 0 ; loop < routeIndex.size() ; loop++){
+		string currentRoute = routeIndex[loop];
+		size_t indexDash = currentRoute.find("-");
+		string src = currentRoute.substr(0, indexDash);
+		string dest = currentRoute.substr(indexDash + 1);
+		int trafVol = traffic[currentRoute];
+		cout << src + " "<< dest + " "<< trafVol << "\n";
+	}
 	
 	exit(SUCCESS);
 }

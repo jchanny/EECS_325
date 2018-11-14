@@ -14,6 +14,8 @@
 #include <netinet/udp.h>
 #include <netinet/tcp.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
 
 #define NOT_PRESENT 0
 #define PRESENT 1
@@ -224,13 +226,24 @@ int lengthMode(char *traceFile){
 	exit(SUCCESS);
 }
 
+//helper method that transforms int32 to ip address string
+char *intToIpAddress(u_int32_t ipAddr){
+	struct in_addr ip_addr;
+	ip_addr.s_addr = ipAddr;
+	char *ip_addr_str = inet_ntoa(ip_addr);
+	//now reverse string
+	return ip_addr_str;
+}
+
 int processTcpPacket(struct pkt_info *pinfo){
 	double ts = pinfo->now;
 
-	int src_ip = ntohl(pinfo->iph->saddr);
-	printf("%i", src_ip);
+	char *src_ip = intToIpAddress(pinfo->iph->saddr);
+	char *dst_ip = intToIpAddress(pinfo->iph->daddr);
+	
 	int src_port = ntohs(pinfo->tcph->th_sport);
 	int dest_port = ntohs(pinfo->tcph->th_dport);
+	
 }
 
 int packetPrintingMode(char *traceFile){

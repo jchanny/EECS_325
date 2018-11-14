@@ -1,6 +1,7 @@
 //Jeremy Chan jsc126
 //EECS 325 Proj 4
 //Oct 24, 2018
+//Program to analyze packets
 #include <fcntl.h>
 #include <math.h>
 #include <errno.h>
@@ -21,6 +22,13 @@
 #define MAX_PKT_SIZE 1600
 #define READ_MODE "r"
 #define IP_PKT_SIZE 34
+#define IP_TYPE 0x0800
+#define TCP_PROTOCOL_ID 6
+#define UDP_PROTOCOL_ID 17
+#define MIN_IP_HDR_LEN 5
+#define MAX_IP_HDR_LEN 6
+#define MIN_TCP_HEADER_SIZE 20
+#define UDP_HEADER_SIZE 8
 
 struct pkt_info{
 	//captured length of packet
@@ -48,13 +56,10 @@ int errexit(char *msg){
 	exit(ERROR);
 }
 
-int isIpPacket(){
-	
-}
 
-double formatTime(int secs, int usecs){
-	double newTime = secs;
-	
+double formatUsecs(int usecs){
+	double usecsD = usecs;
+	usecsD = usecsD/pow(10,9);
 }
 
 unsigned short next_packet(int fd, struct pkt_info *pinfo){
@@ -72,8 +77,11 @@ unsigned short next_packet(int fd, struct pkt_info *pinfo){
 		errexit("Cannot read meta information");
 	pinfo->caplen = ntohs(meta.caplen);
 
-	double formattedTime = formatTime(meta.secs, meta.usecs);
-	pinfo->now = ntohl(formattedTime);
+	double formattedTime = ntohl((double)meta.secs);
+	double usecs = ntohl(meta.usecs);
+	usecs = usecs/pow(10,6);
+	formattedTime = formattedTime + usecs;
+	pinfo->now = formattedTime;
 	
 	
 	if(pinfo->caplen == 0)
@@ -87,14 +95,23 @@ unsigned short next_packet(int fd, struct pkt_info *pinfo){
 		errexit("unexpected end of file");
 	if(bytes_read < sizeof(struct ether_header))
 		return (1);
-	
+
 	pinfo->ethh = (struct ether_header *)pinfo->pkt;
 	pinfo->ethh->ether_type = ntohs(pinfo->ethh->ether_type);
-	
-	
-/*possibly set pinfo->iph and handle byte order */
-	/* possibly set pinfo->udph and handle byte order */
-    /* possibly set pinfo->tcph and handle byte order */
+
+	//handle IP packet
+	if(pinfo->caplen >= IP_PKT_SIZE && pinfo->ethh->ether_type == IP_TYPE){
+		pinfo->iph = (struct iphdr *)(pinfo->pkt + sizeof(struct ether_header));
+
+		//store correct transport packet in pinfo
+		if(pinfo->iph->protocol == TCP_PROTOCOL_ID){
+			pinfo->tcph = (struct tcphdr *)(pinfo->pkt + sizeof(struct iphdr) + sizeof(struct ether_header));
+		}
+		else if(pinfo->iph->protocol == UDP_PROTOCOL_ID){
+			pinfo->udph = (struct udphdr *)(pinfo->pkt + sizeof(struct iphdr) + sizeof(struct ether_header));
+		}
+	}
+
 	return (1);
 }
 
@@ -105,7 +122,7 @@ int summaryMode(char *traceFile){
 	int pktCount = 0;
 	int ipPkts = 0;
 	
-	int fd = open("409.trace", O_RDONLY);
+	int fd = open(traceFile, O_RDONLY);
 
 	if(fd < 0){
 		errexit("Error opening file.");
@@ -114,7 +131,7 @@ int summaryMode(char *traceFile){
 	next_packet(fd, &pinfo);
 	if(pinfo.caplen > 0)
 		pktCount++;
-	if(pinfo.caplen >= IP_PKT_SIZE && pinfo.ethh->ether_type == 0x0800){
+	if(pinfo.caplen >= IP_PKT_SIZE && pinfo.ethh->ether_type == IP_TYPE){
 		ipPkts++;
 	}
 	
@@ -125,7 +142,7 @@ int summaryMode(char *traceFile){
 		last_time = pinfo.now;
 		if(pinfo.caplen > 0)
 			pktCount++;
-		if(pinfo.caplen >= IP_PKT_SIZE && pinfo.ethh->ether_type == 0x0800)
+		if(pinfo.caplen >= IP_PKT_SIZE && pinfo.ethh->ether_type == IP_TYPE)
 			ipPkts++;
 	}
 
@@ -138,11 +155,97 @@ int summaryMode(char *traceFile){
 	exit(SUCCESS);
 }
 
-int lengthMode(){
+int readIpPacket(struct pkt_info *pinfo){
+	double ts = pinfo->now;
+	int caplen = pinfo->caplen;
+	int ip_len = -1;
+	int iphl = -1;
+	char transport = '-';
+	int protocol = -1;
+	//check if entire IP header is present
+	if(caplen >= IP_PKT_SIZE){
+		ip_len = ntohs(pinfo->iph->tot_len);
+		iphl = pinfo->iph->ihl;
+
+		if(iphl == MIN_IP_HDR_LEN)
+			iphl = 20;
+		if(iphl == MAX_IP_HDR_LEN)
+			iphl = 24;
+		
+		protocol = pinfo->iph->protocol;
+		
+		if(protocol == TCP_PROTOCOL_ID)
+			transport = 'T';
+		else if(protocol == UDP_PROTOCOL_ID)
+			transport = 'U';
+		else
+			transport = '?';
+
+		printf("%f %i %i %i %c", ts, caplen, ip_len, iphl, transport);
+
+		if(transport == '?'){
+			printf(" ? ?");
+		}
+		else{
+			int trans_hl = ip_len - iphl;
+			if((transport == 'T' && trans_hl < MIN_TCP_HEADER_SIZE) || (transport == 'U' && trans_hl < UDP_HEADER_SIZE))
+				printf(" -");
+			else
+				printf(" %i", trans_hl);
+
+			//if transport is ?, then payload len ?
+			//if TCP or UDP header not presnet print 0
+		}
+	}//IP hdr not present fully
+	else{
+		printf("%f %i - - - - -", ts, caplen);
+	}
+
+	printf("\n");
+	return 0;
+}
+
+//print out data about IP packets in trace file
+int lengthMode(char *traceFile){
+	struct pkt_info pinfo;
+	
+	int fd = open(traceFile, O_RDONLY);
+	if(fd < 0){
+		errexit("Error opening file.");
+	}
+
+	while(next_packet(fd, &pinfo)){
+		//if ethernet header not present or not IP packet, ignore
+		if(pinfo.caplen >= sizeof(struct ether_header) && pinfo.ethh->ether_type == IP_TYPE){
+			readIpPacket(&pinfo);
+		}
+	}
+	
 	exit(SUCCESS);
 }
 
-int packetPrintingMode(){
+int processTcpPacket(struct pkt_info *pinfo){
+	double ts = pinfo->now;
+
+	int src_ip = ntohl(pinfo->iph->saddr);
+	printf("%i", src_ip);
+	int src_port = ntohs(pinfo->tcph->th_sport);
+	int dest_port = ntohs(pinfo->tcph->th_dport);
+}
+
+int packetPrintingMode(char *traceFile){
+	struct pkt_info pinfo;
+	
+	int fd = open(traceFile, O_RDONLY);
+	if(fd < 0)
+		errexit("Error opening file.");
+
+	while(next_packet(fd, &pinfo)){
+		if(pinfo.iph->protocol == TCP_PROTOCOL_ID){
+			processTcpPacket(&pinfo);
+		}
+	}
+	
 	exit(SUCCESS);
 }
 
@@ -155,8 +258,11 @@ int parseargs(int argc, char *argv[]){
 
 	int numModeArgs = 0;
 	int tFlag = NOT_PRESENT;
+
+	if(argc == 1)
+		errexit("Mode and trace filename need to be specified");
 	
-	while((opt = getopt(argc, argv, "t:slpm")) != 1){
+	while((opt = getopt(argc, argv, "t:slpm")) != -1){
 		switch(opt){
 		case 't':
 			traceFilename = optarg;
@@ -182,33 +288,32 @@ int parseargs(int argc, char *argv[]){
 	}
 
 	if(tFlag == NOT_PRESENT){
-		errexit("Trace filename must be specified.\n");
+		errexit("Trace filename must be specified.");
 	}
 	if(numModeArgs > 1){
-		errexit("Only 1 mode can be used.\n");
+		errexit("Only 1 mode can be used.");
 	}
 	if(numModeArgs == 0){
-		errexit("Mode must be specified.\n");
+		errexit("Mode must be specified.");
 	}
 
+	return 0;
 }
 
 int main(int argc, char *argv []){
-	char *filenm = "/shout.trace";
-	summaryMode(filenm);
-	/* parseargs(argc, argv); */
+	parseargs(argc, argv);
 	
-	/* if(mode == 's'){ */
-	/* 	summaryMode(); */
-	/* } */
-	/* if(mode == 'l'){ */
-	/* 	lengthMode(); */
-	/* } */
-	/* if(mode == 'p'){ */
-	/* 	packetPrintingMode(); */
-	/* } */
-	/* if(mode == 'm'){ */
-	/* 	trafficMatrixMode(); */
-	/* } */
+	if(mode == 's'){
+		summaryMode(traceFilename);
+	}
+	if(mode == 'l'){
+		lengthMode(traceFilename);
+	}
+	if(mode == 'p'){
+		packetPrintingMode(traceFilename);
+	}
+	if(mode == 'm'){
+		trafficMatrixMode();
+	}
 	return 0;
 }

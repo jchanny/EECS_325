@@ -31,11 +31,13 @@
 #define TCP_PROTOCOL_ID 6
 #define UDP_PROTOCOL_ID 17
 #define MIN_IP_HDR_LEN 5
+#define IP_HDR_SIZE_SMALL 20
+#define IP_HDR_SIZE_BIG 24
 #define MAX_IP_HDR_LEN 6
 #define MIN_TCP_HEADER_SIZE 20
 #define UDP_HEADER_SIZE 8
 #define FOUR_BIT_OFFSET 4
-
+#define IP_ADDR_BUF_SIZE 45
 using namespace std;
 
 struct pkt_info{
@@ -64,12 +66,7 @@ int errexit(char *msg){
 	exit(ERROR);
 }
 
-
-double formatUsecs(int usecs){
-	double usecsD = usecs;
-	usecsD = usecsD/pow(10,9);
-}
-
+//moves pointer to next packet
 unsigned short next_packet(int fd, struct pkt_info *pinfo){
 	struct meta_info meta;
 	int bytes_read;
@@ -185,9 +182,9 @@ int readIpPacket(struct pkt_info *pinfo){
 		iphl = pinfo->iph->ihl;
 
 		if(iphl == MIN_IP_HDR_LEN)
-			iphl = 20;
+			iphl = IP_HDR_SIZE_SMALL;
 		if(iphl == MAX_IP_HDR_LEN)
-			iphl = 24;
+			iphl = IP_HDR_SIZE_BIG;
 		
 		protocol = pinfo->iph->protocol;
 		
@@ -259,8 +256,8 @@ int intToIpAddress(u_int32_t ipAddr, char buffer[]){
 //prints out each valid TCP Packet
 int processTcpPacket(struct pkt_info *pinfo){
 	double ts = pinfo->now;
-	char src_ip[45];
-	char dst_ip[45];
+	char src_ip[IP_ADDR_BUF_SIZE];
+	char dst_ip[IP_ADDR_BUF_SIZE];
 	
 	intToIpAddress(pinfo->iph->saddr, src_ip);
 	intToIpAddress(pinfo->iph->daddr, dst_ip);
@@ -309,7 +306,7 @@ int trafficMatrixMode(char *traceFile){
 
 	int fd = open(traceFile, O_RDONLY);
 	if(fd < 0){
-		
+		errexit("Error opening file.");
 	}
 	
 	//generate map structure
@@ -327,9 +324,9 @@ int trafficMatrixMode(char *traceFile){
 			int ip_len = ntohs(pinfo.iph->tot_len);
 			int iphl = pinfo.iph->ihl;
 			if(iphl == MIN_IP_HDR_LEN)
-				iphl = 20;
+				iphl = IP_HDR_SIZE_SMALL;
 			if(iphl == MAX_IP_HDR_LEN)
-				iphl = 24;
+				iphl = IP_HDR_SIZE_BIG;
 			
 			int trans_hl = pinfo.tcph->th_off * FOUR_BIT_OFFSET;
 			int traffic_volume = ip_len - iphl - trans_hl;

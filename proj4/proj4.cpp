@@ -156,7 +156,7 @@ int summaryMode(char *traceFile){
 		last_time = pinfo.now;
 		if(pinfo.caplen > 0)
 			pktCount++;
-		if(pinfo.caplen >= IP_PKT_SIZE && pinfo.ethh->ether_type == IP_TYPE)
+		if( pinfo.ethh->ether_type == IP_TYPE)
 			ipPkts++;
 	}
 
@@ -169,6 +169,7 @@ int summaryMode(char *traceFile){
 	exit(SUCCESS);
 }
 
+//for reading length mode data
 int readIpPacket(struct pkt_info *pinfo){
 	double ts = pinfo->now;
 	int caplen = pinfo->caplen;
@@ -206,7 +207,7 @@ int readIpPacket(struct pkt_info *pinfo){
 				trans_hl = pinfo->tcph->th_off * FOUR_BIT_OFFSET;
 			if(transport == 'U')
 				trans_hl = UDP_HEADER_SIZE;
-			if((transport == 'T' && ip_len - iphl < MIN_TCP_HEADER_SIZE) || (transport == 'U' && ip_len - iphl < UDP_HEADER_SIZE))
+			if((transport == 'T' && trans_hl < MIN_TCP_HEADER_SIZE) || (transport == 'U' && ntohs(pinfo->udph->uh_ulen) < UDP_HEADER_SIZE))
 				printf(" - -");
 			else{
 				printf(" %i", trans_hl);
@@ -298,6 +299,7 @@ int packetPrintingMode(char *traceFile){
 	exit(SUCCESS);
 }
 
+//m mode 
 int trafficMatrixMode(char *traceFile){
 	map <string, int> traffic;
 	//stores all routes encountered, for iterating through traffic
@@ -385,6 +387,8 @@ int parseargs(int argc, char *argv[]){
 			mode = 'm';
 			numModeArgs++;
 			break;
+		default:
+			errexit("Invalid option specified.");
 		}
 	}
 
@@ -395,7 +399,7 @@ int parseargs(int argc, char *argv[]){
 		errexit("Only 1 mode can be used.");
 	}
 	if(numModeArgs == 0){
-		errexit("Mode must be specified.");
+		errexit("A mode must be specified.");
 	}
 
 	return 0;
